@@ -241,3 +241,72 @@ class _ItriHomeState extends State<ItriHome> with TickerProviderStateMixin {
     // MÜZİK
     if (text.contains('müzik') || text.contains('şarkı') || text.contains('çal')) {
       St
+  // ── UYGULAMA AÇ ──
+  Future<void> _openApp(String key) async {
+    final url = _apps[key]!;
+    await _speak('$key açılıyor');
+    setState(() => _response = '📱 ${_capitalize(key)} açılıyor...');
+    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+  }
+
+  // ── HAVA DURUMU ──
+  Future<void> _getWeather(String text) async {
+    String city = 'Istanbul';
+    final cities = {
+      'istanbul': 'Istanbul', 'ankara': 'Ankara', 'izmir': 'Izmir',
+      'antalya': 'Antalya', 'bursa': 'Bursa', 'konya': 'Konya',
+      'trabzon': 'Trabzon', 'adana': 'Adana', 'gaziantep': 'Gaziantep',
+    };
+    for (final c in cities.keys) {
+      if (text.contains(c)) { city = cities[c]!; break; }
+    }
+    try {
+      final res = await http.get(Uri.parse(
+        'https://wttr.in/$city?format=j1'
+      ));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final current = data['current_condition'][0];
+        final temp = current['temp_C'];
+        final desc = current['weatherDesc'][0]['value'];
+        final humidity = current['humidity'];
+        final wind = current['windspeedKmph'];
+        final result = '$city: $temp°C, $desc. Nem: %$humidity, Rüzgar: $wind km/h';
+        await _speak(result);
+        setState(() => _response = '🌤 $result');
+      }
+    } catch (e) {
+      await _speak('Hava durumu alınamadı');
+      setState(() => _response = '❌ Hava durumu alınamadı');
+    }
+  }
+
+  // ── ÖDEV FOTOĞRAFI ──
+  Future<void> _pickHomework() async {
+    final XFile? image = await _picker.pickImage(source: ImageSource.camera);
+    if (image == null) return;
+    setState(() {
+      _processing = true;
+      _status = 'Ödev analiz ediliyor...';
+      _homeworkResult = null;
+    });
+    await _speak('Ödevin analiz ediliyor, bekle');
+    try {
+      final bytes = await File(image.path).readAsBytes();
+      final base64Image = base64Encode(bytes);
+      final res = await http.post(
+        Uri.parse('https://api.anthropic.com/v1/messages'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'model': 'claude-sonnet-4-20250514',
+          'max_tokens': 2000,
+          'messages': [
+            {
+              'role': 'user',
+              'content': [
+                {
+                  'type': 'image',
+                  'source': {
+                    'type': 'base64',
+                    'media_type': 'image/jpeg',
+                    'data': base64Image,
